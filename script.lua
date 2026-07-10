@@ -18,7 +18,7 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- Global Variables
-local GroupId = 12345678 -- <<--- Put your Roblox Group ID here!
+local GroupId = 12345678 -- <<--- ضع معرف مجموعتك هنا
 local AimbotEnabled = false
 local AimPart = "Head"
 local AimSmoothness = 0.25 
@@ -104,7 +104,7 @@ game:GetService("RunService").Stepped:Connect(function()
 end)
 
 -- ==========================================
--- TABS CREATION (Full English Layout)
+-- TABS CREATION
 -- ==========================================
 local CombatTab = Window:CreateTab("Combat & ESP", 4483362458)
 local TrollTab = Window:CreateTab("Troll & Mechanics", 4483362458)
@@ -149,6 +149,7 @@ CombatTab:CreateSlider({
    CurrentValue = 25,
    Flag = "AimSmooth",
    Callback = function(Value)
+      -- تعديل طريقة الحساب لتتوافق مع الـ Loop الجديد القوي
       AimSmoothness = Value / 100
    end,
 })
@@ -230,7 +231,7 @@ CombatTab:CreateToggle({
    end,
 })
 
--- ADVANCED LIGHTWEIGHT & POWERFUL AIMBOT LOOP
+-- ADVANCED LIGHTWEIGHT & POWERFUL AIMBOT LOOP (المعدل والقوي جداً)
 task.spawn(function()
     local Players = game:GetService("Players")
     local LocalPlayer = Players.LocalPlayer
@@ -262,8 +263,17 @@ task.spawn(function()
                 local TargetPos, OnScreen = Camera:WorldToViewportPoint(ClosestPlayer.Character[AimPart].Position)
                 if OnScreen then
                     local MousePos = UserInputService:GetMouseLocation()
-                    local MainX = (TargetPos.X - MousePos.X) * (1 - AimSmoothness)
-                    local MainY = (TargetPos.Y - MousePos.Y) * (1 - AimSmoothness)
+                    
+                    -- حسابات حقيقية للمسافة النسبية (Delta) لمنع الاهتزاز والقفز العشوائي
+                    local DeltaX = TargetPos.X - MousePos.X
+                    local DeltaY = TargetPos.Y - MousePos.Y
+                    
+                    -- التحكم بقوة ونعومة اللك: كلما قلت القيمة في السلايدر، زادت قوة وسرعة التثبيت (Blatant Lock)
+                    local Divider = math.max(AimSmoothness * 10, 1) 
+                    
+                    local MainX = DeltaX / Divider
+                    local MainY = DeltaY / Divider
+                    
                     mousemoverel(MainX, MainY)
                 end
             end
@@ -440,7 +450,7 @@ TargetTab:CreateButton({
 })
 
 -- ==========================================
--- FRIENDS LIST TAB (DYNAMIC DROPDOWN FOR AIM BYPASS)
+-- FRIENDS LIST TAB
 -- ==========================================
 
 local FriendDropdown = FriendsTab:CreateDropdown({
