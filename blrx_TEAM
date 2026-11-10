@@ -1,0 +1,665 @@
+-- BLRX_TEAM | FINAL FULL ARSENAL
+-- ESP + Aimbot + Fly + Speed + InfJump + Noclip + AntiAFK
+-- Map Copy + Ultra Fling + Full Nuke + Lag + Skybox + Sound + Crash tools
+-- Xeno Executor
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+local StarterGui = game:GetService("StarterGui")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+--==================== CONFIG ====================--
+local AIMBOT_FOV = 200
+local AIMBOT_SMOOTH = 0.1
+local AIMBOT_TEAM_CHECK = false
+local FLY_SPEED = 300
+local WALK_SPEED = 150
+local JUMP_POWER = 150
+local FLING_POWER = 1e9
+local DESTROY_POWER = 1e9
+local ESP_BOX, ESP_TRACER, ESP_NAME, ESP_DISTANCE, ESP_HEALTH = true, true, true, true, true
+local ESP_COLOR_ENEMY = Color3.fromRGB(255, 25, 25)
+local ESP_COLOR_TEAM  = Color3.fromRGB(30, 255, 130)
+--================================================--
+
+local Connections = {}
+local Flying, AimbotEnabled, ESPEnabled = false, false, true
+local NoclipEnabled, SpeedEnabled, InfJumpEnabled = false, false, false
+local BodyVelocity, BodyGyro
+local ESPObjects = {}
+local OriginalWalkSpeed, OriginalJumpPower = 16, 50
+
+--==================== UTILS ====================--
+local function notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "[BLRX_TEAM] "..title,
+            Text = text,
+            Duration = 4
+        })
+    end)
+    print("[BLRX_TEAM] "..title.." | "..text)
+end
+
+local function getClosestPlayer()
+    local closest, shortest = nil, AIMBOT_FOV
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            if AIMBOT_TEAM_CHECK and plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team then continue end
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            local head = plr.Character:FindFirstChild("Head")
+            if hum and hum.Health > 0 and head then
+                local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Mouse.X, Mouse.Y)).Magnitude
+                    if dist < shortest then
+                        shortest = dist
+                        closest = head
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function getRoot()
+    local c = LocalPlayer.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum()
+    local c = LocalPlayer.Character
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+--==================== ESP ====================--
+local function clearESP(plr)
+    if ESPObjects[plr] then
+        for _, v in pairs(ESPObjects[plr]) do pcall(function() v:Destroy() end) end
+        ESPObjects[plr] = nil
+    end
+end
+
+local function createESP(plr)
+    if plr == LocalPlayer then return end
+    clearESP(plr)
+    local d = {}
+    d.box = Drawing.new("Square")
+    d.box.Thickness = 1.5
+    d.box.Filled = false
+    d.box.Visible = false
+    d.tracer = Drawing.new("Line")
+    d.tracer.Thickness = 1.2
+    d.tracer.Visible = false
+    d.name = Drawing.new("Text")
+    d.name.Size = 15
+    d.name.Center = true
+    d.name.Outline = true
+    d.name.Visible = false
+    d.health = Drawing.new("Text")
+    d.health.Size = 13
+    d.health.Center = true
+    d.health.Outline = true
+    d.health.Visible = false
+    ESPObjects[plr] = d
+end
+
+local function updateESP()
+    if not ESPEnabled then
+        for plr in pairs(ESPObjects) do clearESP(plr) end
+        return
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        if not ESPObjects[plr] then createESP(plr) end
+        local d = ESPObjects[plr]
+        local char = plr.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local head = char and char:FindFirstChild("Head")
+        if not char or not hum or not root or not head or hum.Health <= 0 then
+            d.box.Visible = false
+            d.tracer.Visible = false
+            d.name.Visible = false
+            d.health.Visible = false
+            continue
+        end
+        local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+        local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+        local footPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+        local isTeam = plr.Team and LocalPlayer.Team and plr.Team == LocalPlayer.Team
+        local col = isTeam and ESP_COLOR_TEAM or ESP_COLOR_ENEMY
+        if onScreen then
+            local height = math.abs(headPos.Y - footPos.Y)
+            local width = height / 2
+            if ESP_BOX then
+                d.box.Size = Vector2.new(width, height)
+                d.box.Position = Vector2.new(pos.X - width/2, headPos.Y)
+                d.box.Color = col
+                d.box.Visible = true
+            else d.box.Visible = false end
+            if ESP_TRACER then
+                d.tracer.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                d.tracer.To = Vector2.new(pos.X, pos.Y)
+                d.tracer.Color = col
+                d.tracer.Visible = true
+            else d.tracer.Visible = false end
+            if ESP_NAME or ESP_DISTANCE then
+                local dist = (root.Position - Camera.CFrame.Position).Magnitude
+                local txt = ESP_NAME and plr.Name or ""
+                if ESP_DISTANCE then txt = txt .. string.format(" [%.0fm]", dist) end
+                d.name.Text = txt
+                d.name.Position = Vector2.new(pos.X, headPos.Y - 18)
+                d.name.Color = col
+                d.name.Visible = true
+            else d.name.Visible = false end
+            if ESP_HEALTH then
+                d.health.Text = string.format("%.0f HP", hum.Health)
+                d.health.Position = Vector2.new(pos.X, footPos.Y + 4)
+                d.health.Color = Color3.fromRGB(255*(1-hum.Health/hum.MaxHealth), 255*(hum.Health/hum.MaxHealth), 40)
+                d.health.Visible = true
+            else d.health.Visible = false end
+        else
+            d.box.Visible = false
+            d.tracer.Visible = false
+            d.name.Visible = false
+            d.health.Visible = false
+        end
+    end
+end
+Players.PlayerRemoving:Connect(clearESP)
+
+--==================== MOVEMENT ====================--
+local function toggleSpeed()
+    SpeedEnabled = not SpeedEnabled
+    local hum = getHum()
+    if hum then
+        if SpeedEnabled then
+            OriginalWalkSpeed = hum.WalkSpeed
+            hum.WalkSpeed = WALK_SPEED
+            notify("Speed", "ON | "..WALK_SPEED)
+        else
+            hum.WalkSpeed = OriginalWalkSpeed or 16
+            notify("Speed", "OFF")
+        end
+    end
+end
+
+local function toggleInfJump()
+    InfJumpEnabled = not InfJumpEnabled
+    notify("InfJump", InfJumpEnabled and "ON" or "OFF")
+end
+
+UserInputService.JumpRequest:Connect(function()
+    if InfJumpEnabled then
+        local hum = getHum()
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
+local function toggleNoclip()
+    NoclipEnabled = not NoclipEnabled
+    notify("Noclip", NoclipEnabled and "ON" or "OFF")
+end
+
+Connections.Noclip = RunService.Stepped:Connect(function()
+    if not NoclipEnabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.CanCollide = false
+        end
+    end
+end)
+
+-- keep speed after respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and SpeedEnabled then
+        hum.WalkSpeed = WALK_SPEED
+    end
+end)
+
+--==================== FLY ====================--
+local function startFly()
+    local root, hum = getRoot(), getHum()
+    if not root or not hum then return end
+    Flying = true
+    hum.PlatformStand = true
+    BodyVelocity = Instance.new("BodyVelocity")
+    BodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    BodyVelocity.Velocity = Vector3.zero
+    BodyVelocity.Parent = root
+    BodyGyro = Instance.new("BodyGyro")
+    BodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    BodyGyro.P = 9e4
+    BodyGyro.Parent = root
+    Connections.Fly = RunService.RenderStepped:Connect(function()
+        if not Flying or not root or not root.Parent then return end
+        BodyGyro.CFrame = Camera.CFrame
+        local dir = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0,1,0) end
+        BodyVelocity.Velocity = dir.Magnitude > 0 and dir.Unit * FLY_SPEED or Vector3.zero
+    end)
+    notify("Fly", "ON | "..FLY_SPEED)
+end
+
+local function stopFly()
+    Flying = false
+    if Connections.Fly then Connections.Fly:Disconnect() Connections.Fly = nil end
+    if BodyVelocity then BodyVelocity:Destroy() BodyVelocity = nil end
+    if BodyGyro then BodyGyro:Destroy() BodyGyro = nil end
+    local hum = getHum()
+    if hum then hum.PlatformStand = false end
+    notify("Fly", "OFF")
+end
+
+local function toggleFly()
+    if Flying then stopFly() else startFly() end
+end
+
+--==================== AIMBOT ====================--
+local function toggleAimbot()
+    AimbotEnabled = not AimbotEnabled
+    notify("Aimbot", AimbotEnabled and "ON" or "OFF")
+    if AimbotEnabled then
+        Connections.Aimbot = RunService.RenderStepped:Connect(function()
+            if not AimbotEnabled then return end
+            local t = getClosestPlayer()
+            if t then
+                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, t.Position), AIMBOT_SMOOTH)
+            end
+        end)
+    else
+        if Connections.Aimbot then Connections.Aimbot:Disconnect() Connections.Aimbot = nil end
+    end
+end
+
+--==================== ANTI-AFK ====================--
+local function startAntiAFK()
+    Connections.AntiAFK = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+    notify("AntiAFK", "ON")
+end
+startAntiAFK()
+
+--==================== MAP COPY ====================--
+local function dumpFullMap()
+    notify("Map Copy", "Dumping...")
+    local mapData = {Name=game.Name, PlaceId=game.PlaceId, JobId=game.JobId, Objects={}, Scripts={}, LocalScripts={}, ModuleScripts={}}
+    local function scan(obj, path)
+        path = path or obj.Name
+        pcall(function()
+            local e = {Class=obj.ClassName, Name=obj.Name, Path=path}
+            if obj:IsA("BasePart") then
+                e.Position = {obj.Position.X, obj.Position.Y, obj.Position.Z}
+                e.Size = {obj.Size.X, obj.Size.Y, obj.Size.Z}
+                e.Anchored = obj.Anchored
+            end
+            table.insert(mapData.Objects, e)
+        end)
+        for _, c in ipairs(obj:GetChildren()) do scan(c, path.."."..c.Name) end
+    end
+    scan(Workspace)
+    local function dumpScripts(cont, list)
+        for _, v in ipairs(cont:GetDescendants()) do
+            if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("ModuleScript") then
+                local src = "--locked"
+                pcall(function()
+                    if decompile then src = decompile(v)
+                    elseif getscriptbytecode then src = tostring(getscriptbytecode(v)) end
+                end)
+                table.insert(mapData[list], {Name=v.Name, Class=v.ClassName, Path=v:GetFullName(), Source=src})
+            end
+        end
+    end
+    dumpScripts(Workspace, "Scripts")
+    dumpScripts(ReplicatedStorage, "ModuleScripts")
+    pcall(function() dumpScripts(game:GetService("StarterPlayer"), "LocalScripts") end)
+    local json = HttpService:JSONEncode(mapData)
+    if writefile then
+        local fn = "BLRX_MAP_"..game.PlaceId.."_"..os.time()..".json"
+        writefile(fn, json)
+        notify("Map Copy", "Saved "..fn)
+    else
+        print(json:sub(1,4000))
+        notify("Map Copy", "Printed")
+    end
+end
+
+--==================== DESTROY ARSENAL ====================--
+local function flingMapUltra()
+    notify("Ultra Fling", "1e9 force...")
+    local n = 0
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            pcall(function()
+                obj.Anchored = false
+                obj.AssemblyLinearVelocity = Vector3.new(math.random(-FLING_POWER,FLING_POWER), math.random(FLING_POWER/3,FLING_POWER), math.random(-FLING_POWER,FLING_POWER))
+                obj.AssemblyAngularVelocity = Vector3.new(math.random(-800,800), math.random(-800,800), math.random(-800,800))
+            end)
+            n += 1
+        end
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local r = plr.Character:FindFirstChild("HumanoidRootPart")
+            if r then pcall(function() r.AssemblyLinearVelocity = Vector3.new(math.random(-FLING_POWER,FLING_POWER), FLING_POWER, math.random(-FLING_POWER,FLING_POWER)) end) end
+        end
+    end
+    notify("Ultra Fling", n.." parts yeeted")
+end
+
+local function destroyUnanchorAll()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then pcall(function() obj.Anchored=false obj.CanCollide=false end) end
+    end
+    notify("Destroy", "All unanchored")
+end
+
+local function destroyVelocitySpam()
+    notify("Destroy", "Velocity spam...")
+    for i = 1, 50 do
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Parent then
+                pcall(function()
+                    obj.AssemblyLinearVelocity = Vector3.new(math.random(-DESTROY_POWER,DESTROY_POWER), math.random(DESTROY_POWER/2,DESTROY_POWER), math.random(-DESTROY_POWER,DESTROY_POWER))
+                end)
+            end
+        end
+        task.wait(0.02)
+    end
+end
+
+local function destroyDeleteMap()
+    local keys = {"map","arena","baseplate","building","house","tycoon","plot","island","lobby","spawn","part","model","wall","floor","roof","tower","base","city","road","car","tree","grass","water","bridge","door","window","furniture","chair","table","bed","car","vehicle","plane","boat"}
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        local low = string.lower(obj.Name)
+        for _, k in ipairs(keys) do
+            if string.find(low, k) then pcall(function() obj:Destroy() end) break end
+        end
+    end
+    notify("Destroy", "Named objects deleted")
+end
+
+local function destroyKillPlayers()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            pcall(function()
+                plr.Character:BreakJoints()
+                for _, p in ipairs(plr.Character:GetDescendants()) do
+                    if p:IsA("BasePart") then p.AssemblyLinearVelocity = Vector3.new(0, DESTROY_POWER, 0) end
+                end
+                plr.Character:Destroy()
+            end)
+        end
+    end
+    notify("Destroy", "Players wiped")
+end
+
+local function destroyTerrain()
+    pcall(function() Workspace.Terrain:Clear() end)
+    notify("Destroy", "Terrain cleared")
+end
+
+local function destroyLightingNuke()
+    pcall(function()
+        Lighting.Brightness = 0
+        Lighting.FogEnd = 0
+        Lighting.ClockTime = 0
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.new(0,0,0)
+        for _, v in ipairs(Lighting:GetChildren()) do pcall(function() v:Destroy() end) end
+    end)
+    notify("Destroy", "Lighting nuked")
+end
+
+local function destroySkybox()
+    pcall(function()
+        local sky = Lighting:FindFirstChildOfClass("Sky")
+        if sky then sky:Destroy() end
+        local s = Instance.new("Sky")
+        s.SkyboxBk = ""
+        s.SkyboxDn = ""
+        s.SkyboxFt = ""
+        s.SkyboxLf = ""
+        s.SkyboxRt = ""
+        s.SkyboxUp = ""
+        s.Parent = Lighting
+        Lighting.Ambient = Color3.new(0,0,0)
+        Lighting.OutdoorAmbient = Color3.new(0,0,0)
+    end)
+    notify("Destroy", "Skybox blacked out")
+end
+
+local function destroySoundSpam()
+    notify("Destroy", "Sound spam...")
+    for i = 1, 40 do
+        pcall(function()
+            local s = Instance.new("Sound")
+            s.SoundId = "rbxassetid://1837829367"
+            s.Volume = 10
+            s.PlaybackSpeed = math.random(50,200)/100
+            s.Parent = Workspace
+            s:Play()
+            task.delay(3, function() s:Destroy() end)
+        end)
+    end
+end
+
+local function destroyLagSpike()
+    notify("Destroy", "Lag spike incoming...")
+    local parts = {}
+    for i = 1, 800 do
+        local p = Instance.new("Part")
+        p.Size = Vector3.new(4,4,4)
+        p.Position = Vector3.new(math.random(-300,300), math.random(10,200), math.random(-300,300))
+        p.Anchored = false
+        p.CanCollide = true
+        p.Parent = Workspace
+        table.insert(parts, p)
+    end
+    task.wait(4)
+    for _, p in ipairs(parts) do pcall(function() p:Destroy() end) end
+    notify("Destroy", "Lag spike done")
+end
+
+local function destroySpamInstances()
+    notify("Destroy", "Instance spam...")
+    for i = 1, 500 do
+        pcall(function()
+            local f = Instance.new("Folder")
+            f.Name = "BLRX_SPAM_"..i
+            f.Parent = Workspace
+            for j = 1, 5 do
+                local p = Instance.new("Part")
+                p.Size = Vector3.new(1,1,1)
+                p.Anchored = true
+                p.Parent = f
+            end
+        end)
+    end
+end
+
+local function destroyFullNuke()
+    notify("FULL NUKE", "BLRX_TEAM TOTAL DESTRUCTION")
+    destroyUnanchorAll()
+    task.wait(0.05)
+    destroyVelocitySpam()
+    destroyDeleteMap()
+    destroyKillPlayers()
+    destroyTerrain()
+    destroyLightingNuke()
+    destroySkybox()
+    destroySoundSpam()
+    -- final wipe
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj.Name ~= "Camera" and obj ~= LocalPlayer.Character and not obj:IsA("Terrain") then
+            pcall(function() obj:Destroy() end)
+        end
+    end
+    notify("FULL NUKE", "Map erased by BLRX_TEAM")
+end
+
+local function destroyServerLag()
+    notify("Server Lag", "Spamming remote calls...")
+    task.spawn(function()
+        for i = 1, 300 do
+            for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
+                if v:IsA("RemoteEvent") then
+                    pcall(function() v:FireServer() end)
+                elseif v:IsA("RemoteFunction") then
+                    pcall(function() v:InvokeServer() end)
+                end
+            end
+            task.wait(0.01)
+        end
+    end)
+end
+
+--==================== TOGGLES ====================--
+local function toggleESP()
+    ESPEnabled = not ESPEnabled
+    notify("ESP", ESPEnabled and "ON" or "OFF")
+    if not ESPEnabled then for plr in pairs(ESPObjects) do clearESP(plr) end end
+end
+
+--==================== KEYBINDS ====================--
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    local k = input.KeyCode
+    if k == Enum.KeyCode.F1 then dumpFullMap()
+    elseif k == Enum.KeyCode.F2 then toggleAimbot()
+    elseif k == Enum.KeyCode.F3 then toggleFly()
+    elseif k == Enum.KeyCode.F4 then flingMapUltra()
+    elseif k == Enum.KeyCode.F5 then destroyFullNuke()
+    elseif k == Enum.KeyCode.F6 then toggleESP()
+    elseif k == Enum.KeyCode.F7 then destroyUnanchorAll()
+    elseif k == Enum.KeyCode.F8 then destroyKillPlayers()
+    elseif k == Enum.KeyCode.F9 then toggleSpeed()
+    elseif k == Enum.KeyCode.F10 then toggleInfJump()
+    elseif k == Enum.KeyCode.F11 then toggleNoclip()
+    elseif k == Enum.KeyCode.KeypadOne then destroyLagSpike()
+    elseif k == Enum.KeyCode.KeypadTwo then destroySoundSpam()
+    elseif k == Enum.KeyCode.KeypadThree then destroySkybox()
+    elseif k == Enum.KeyCode.KeypadFour then destroySpamInstances()
+    elseif k == Enum.KeyCode.KeypadFive then destroyServerLag()
+    end
+end)
+
+Connections.ESP = RunService.RenderStepped:Connect(updateESP)
+
+--==================== GUI ====================--
+local function createGui()
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "BLRX_TEAM_FINAL"
+    sg.ResetOnSpawn = false
+    sg.Parent = CoreGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 250, 0, 580)
+    frame.Position = UDim2.new(0, 12, 0.2, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+    frame.BorderSizePixel = 0
+    frame.Parent = sg
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = Color3.fromRGB(0, 255, 170)
+    stroke.Thickness = 1.6
+
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1,0,0,32)
+    title.BackgroundTransparency = 1
+    title.Text = "BLRX_TEAM"
+    title.TextColor3 = Color3.fromRGB(0, 255, 170)
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 20
+
+    local sub = Instance.new("TextLabel", frame)
+    sub.Size = UDim2.new(1,0,0,16)
+    sub.Position = UDim2.new(0,0,0,26)
+    sub.BackgroundTransparency = 1
+    sub.Text = "FINAL | 1e9x DESTROY"
+    sub.TextColor3 = Color3.fromRGB(160,160,160)
+    sub.Font = Enum.Font.Gotham
+    sub.TextSize = 11
+
+    local buttons = {
+        {Text="F1  Map Copy + Scripts", Func=dumpFullMap},
+        {Text="F2  Aimbot", Func=toggleAimbot},
+        {Text="F3  Fly", Func=toggleFly},
+        {Text="F4  Ultra Fling 1e9", Func=flingMapUltra},
+        {Text="F5  FULL NUKE", Func=destroyFullNuke},
+        {Text="F6  ESP Toggle", Func=toggleESP},
+        {Text="F7  Unanchor All", Func=destroyUnanchorAll},
+        {Text="F8  Kill All Players", Func=destroyKillPlayers},
+        {Text="F9  Speed Hack", Func=toggleSpeed},
+        {Text="F10 Inf Jump", Func=toggleInfJump},
+        {Text="F11 Noclip", Func=toggleNoclip},
+        {Text="N1  Lag Spike", Func=destroyLagSpike},
+        {Text="N2  Sound Spam", Func=destroySoundSpam},
+        {Text="N3  Black Skybox", Func=destroySkybox},
+        {Text="N4  Instance Spam", Func=destroySpamInstances},
+        {Text="N5  Server Lag", Func=destroyServerLag},
+    }
+
+    for i, btn in ipairs(buttons) do
+        local b = Instance.new("TextButton", frame)
+        b.Size = UDim2.new(0.92,0,0,28)
+        b.Position = UDim2.new(0.04,0,0,48+(i-1)*32)
+        b.BackgroundColor3 = Color3.fromRGB(22,22,30)
+        b.Text = btn.Text
+        b.TextColor3 = Color3.fromRGB(235,235,235)
+        b.Font = Enum.Font.GothamMedium
+        b.TextSize = 12
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0,5)
+        b.MouseButton1Click:Connect(btn.Func)
+    end
+end
+
+createGui()
+notify("BLRX_TEAM", "FINAL LOADED | kol chay ready")
+print([[
+════════════════════════════════════════
+   BLRX_TEAM  FINAL  |  1e9x DESTROY
+════════════════════════════════════════
+ F1  Map Copy + Scripts
+ F2  Aimbot
+ F3  Fly (300)
+ F4  Ultra Fling
+ F5  FULL NUKE
+ F6  ESP (Box+Tracer+Name+HP)
+ F7  Unanchor All
+ F8  Kill All Players
+ F9  Speed Hack (150)
+ F10 Infinite Jump
+ F11 Noclip
+ N1  Lag Spike (800 parts)
+ N2  Sound Spam
+ N3  Black Skybox
+ N4  Instance Spam
+ N5  Server Lag (remote spam)
+ Anti-AFK = always ON
+════════════════════════════════════════
+]])
